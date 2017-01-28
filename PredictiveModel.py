@@ -45,34 +45,39 @@ class PredictiveModel():
         print("Classifier method not known")
         return None
 
-
     def fit(self, dt_train):
         preproc_start_time = time.time()
+
         train_encoded = self.encoder.fit_transform(dt_train)
-        train_X = train_encoded.drop([self.case_id_col, self.label_col], axis=1)
+        train_x = train_encoded.drop([self.case_id_col, self.label_col], axis=1)
         train_y = train_encoded[self.label_col]
-        
-        
-        if self.transformer is not None:
-            text_cols = [col for col in train_X.columns.values if col.startswith(self.text_col)]
-            for col in text_cols:
-                train_X[col] = train_X[col].astype('str')
-            train_text = self.transformer.fit_transform(train_X[text_cols], train_y)
-            train_X = pd.concat([train_X.drop(text_cols, axis=1), train_text], axis=1)
-        self.train_X = train_X
-        preproc_end_time = time.time()
-        self.preproc_time = preproc_end_time - preproc_start_time
-        
+
+        if self.transformer:
+            train_x = self._transform_x(train_x, train_y)
+
+        self.preproc_end_time = time.time() - preproc_start_time
+
         cls_start_time = time.time()
-        if len(train_y.unique()) < 2: # less than 2 classes are present
+        self._train_cls(train_x, train_y)
+        self.cls_time = time.time() - cls_start_time
+        return None
+
+    def _transform_x(self, train_x, train_y):
+        text_cols = [col for col in train_x.columns.values if col.startswith(self.text_col)]
+        # Alternative syntax: train_x = list(map(lambda col: train_x[col].astype('str'), text_cols))
+        for col in text_cols:
+            train_x[col] = train_x[col].astype('str')
+        train_text = self.transformer.fit_transform(train_x[text_cols], train_y)
+        return pd.concat([train_x.drop(text_cols, axis=1), train_text], axis=1)
+
+    def _train_cls(self, train_x, train_y):
+        if len(train_y.unique()) < 2:  # less than 2 classes are present
             self.hardcoded_prediction = train_y.iloc[0]
             self.cls.classes_ = train_y.unique()
         else:
-            self.cls.fit(train_X, train_y)
-        cls_end_time = time.time()
-        self.cls_time = cls_end_time - cls_start_time
+            self.cls.fit(train_x, train_y)
+        return None
 
-        
     def predict_proba(self, dt_test):
         encode_start_time = time.time()
         test_encoded = self.encoder.transform(dt_test)

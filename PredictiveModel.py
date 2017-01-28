@@ -9,10 +9,6 @@ import numpy as np
 
 class PredictiveModel():
     hardcoded_prediction = None
-    test_encode_time = None
-    test_preproc_time = None
-    test_time = None
-    nr_test_cases = None
 
     def __init__(self, nr_events, case_id_col, label_col, encoder_kwargs, transformer_kwargs, cls_kwargs, text_col=None,
                  text_transformer_type=None, cls_method="rf"):
@@ -53,16 +49,16 @@ class PredictiveModel():
         train_y = train_encoded[self.label_col]
 
         if self.transformer:
-            train_x = self._transform_x(train_x, train_y)
+            train_x = self._fit_transform_x(train_x, train_y)
 
-        self.preproc_end_time = time.time() - preproc_start_time
+        preproc_end_time = time.time() - preproc_start_time
 
         cls_start_time = time.time()
         self._train_cls(train_x, train_y)
-        self.cls_time = time.time() - cls_start_time
+        cls_time = time.time() - cls_start_time
         return None
 
-    def _transform_x(self, train_x, train_y):
+    def _fit_transform_x(self, train_x, train_y):
         text_cols = [col for col in train_x.columns.values if col.startswith(self.text_col)]
         # Alternative syntax: train_x = list(map(lambda col: train_x[col].astype('str'), text_cols))
         for col in text_cols:
@@ -81,33 +77,32 @@ class PredictiveModel():
     def predict_proba(self, dt_test):
         encode_start_time = time.time()
         test_encoded = self.encoder.transform(dt_test)
-        encode_end_time = time.time()
-        self.test_encode_time = encode_end_time - encode_start_time
-        
+        test_encode_time = time.time() - encode_start_time
+
+        # Transformation
         test_preproc_start_time = time.time()
-        test_X = test_encoded.drop([self.case_id_col, self.label_col], axis=1)
-        
-        if self.transformer is not None:
-            text_cols = [col for col in test_X.columns.values if col.startswith(self.text_col)]
-            for col in text_cols:
-                test_encoded[col] = test_encoded[col].astype('str')
-            test_text = self.transformer.transform(test_encoded[text_cols])
-            test_X = pd.concat([test_X.drop(text_cols, axis=1), test_text], axis=1)
-        
-        
-        self.test_case_names = test_encoded[self.case_id_col]
-        self.test_X = test_X
-        self.test_y = test_encoded[self.label_col]
-        test_preproc_end_time = time.time()
-        self.test_preproc_time = test_preproc_end_time - test_preproc_start_time
-        
+        test_x = test_encoded.drop([self.case_id_col, self.label_col], axis=1)
+        if self.transformer:
+            test_x, test_encoded = self._transform(test_x, test_encoded)
+
+        test_preproc_time = time.time() - test_preproc_start_time
+
+        # Prediction
         test_start_time = time.time()
-        if self.hardcoded_prediction is not None: # e.g. model was trained with one class only
-            predictions_proba = np.array([1.0,0.0]*test_X.shape[0]).reshape(test_X.shape[0],2)
-        else:
-            predictions_proba = self.cls.predict_proba(test_X)
-        test_end_time = time.time()
-        self.test_time = test_end_time - test_start_time
-        self.nr_test_cases = len(predictions_proba)
-        
+        predictions_proba = self._cls_predict_proba(test_x)
+        test_time = time.time() - test_start_time
+
         return predictions_proba
+
+    def _transform(self, test_x, test_encoded):
+        text_cols = [col for col in test_x.columns.values if col.startswith(self.text_col)]
+        for col in text_cols:
+            test_encoded[col] = test_encoded[col].astype('str')
+        test_text = self.transformer.transform(test_encoded[text_cols])
+        test_x = pd.concat([test_x.drop(text_cols, axis=1), test_text], axis=1)
+        return test_x, test_encoded
+
+    def _cls_predict_proba(self, test_x):
+        if self.hardcoded_prediction:  # e.g. model was trained with one class only
+            return np.array([1.0, 0.0] * test_x.shape[0]).reshape(test_x.shape[0], 2)
+        return self.cls.predict_proba(test_x)

@@ -6,7 +6,13 @@ import pandas as pd
 import time
 import numpy as np
 
+
 class PredictiveModel():
+    hardcoded_prediction = None
+    test_encode_time = None
+    test_preproc_time = None
+    test_time = None
+    nr_test_cases = None
 
     def __init__(self, nr_events, case_id_col, label_col, encoder_kwargs, transformer_kwargs, cls_kwargs, text_col=None,
                  text_transformer_type=None, cls_method="rf"):
@@ -14,36 +20,31 @@ class PredictiveModel():
         self.text_col = text_col
         self.case_id_col = case_id_col
         self.label_col = label_col
-        
-        self.encoder = SequenceEncoder(nr_events=nr_events, case_id_col=case_id_col, label_col=label_col, **encoder_kwargs)
-        
-        if text_transformer_type is None:
-            self.transformer = None
-        elif text_transformer_type == "LDATransformer":
-            self.transformer = LDATransformer(**transformer_kwargs)
-        elif text_transformer_type == "BoNGTransformer":
-            self.transformer = BoNGTransformer(**transformer_kwargs)
-        elif text_transformer_type == "NBLogCountRatioTransformer":
-            self.transformer = NBLogCountRatioTransformer(**transformer_kwargs)
-        elif text_transformer_type == "PVTransformer":
-            self.transformer = PVTransformer(**transformer_kwargs)
 
-        else:
-            print("Transformer type not known")
-        
+        self.encoder = SequenceEncoder(nr_events=nr_events, case_id_col=case_id_col, label_col=label_col, **encoder_kwargs)
+        self.transformer = self._get_text_transformer(text_transformer_type, **transformer_kwargs)
+        self.cls = self._get_cls_method(cls_method, **cls_kwargs)
+
+    def _get_text_transformer(self, text_transformer_type, **transformer_kwargs):
+        if text_transformer_type == "LDATransformer":
+            return LDATransformer(**transformer_kwargs)
+        elif text_transformer_type == "BoNGTransformer":
+            return BoNGTransformer(**transformer_kwargs)
+        elif text_transformer_type == "NBLogCountRatioTransformer":
+            return NBLogCountRatioTransformer(**transformer_kwargs)
+        elif text_transformer_type == "PVTransformer":
+            return PVTransformer(**transformer_kwargs)
+        print("Transformer type not known")
+        return None
+
+    def  _get_cls_method(self, cls_method, **cls_kwargs):
         if cls_method == "logit":
-            self.cls = LogisticRegression(**cls_kwargs) 
+            return LogisticRegression(**cls_kwargs)
         elif cls_method == "rf":
-            self.cls = RandomForestClassifier(**cls_kwargs)
-        else:
-            print("Classifier method not known")
-        
-        self.hardcoded_prediction = None
-        self.test_encode_time = None
-        self.test_preproc_time = None
-        self.test_time = None
-        self.nr_test_cases = None
-        
+            return RandomForestClassifier(**cls_kwargs)
+        print("Classifier method not known")
+        return None
+
 
     def fit(self, dt_train):
         preproc_start_time = time.time()
